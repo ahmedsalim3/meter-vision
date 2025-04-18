@@ -14,6 +14,7 @@ setup(
         "tqdm>=4.65.0",
         "huggingface-hub>=0.16.0",
         "matplotlib>=3.5.0",
+        "scikit-learn>=1.6.0",
     ],
     author="Ahmed Salim",
     author_email="realahmedsalim@gmail.com",

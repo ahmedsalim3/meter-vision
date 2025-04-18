@@ -1,45 +1,51 @@
-#!/usr/bin/env python3
-"""
-Script to run inference with the fine-tuned Florence model.
-"""
-
-import argparse
+import torch
+from transformers import AutoModelForCausalLM, AutoProcessor, AutoConfig
 from PIL import Image
+import sys
+import matplotlib.pyplot as plt
 
-from src.modeling.florence import load_florence_model_and_processor
-from src.utils.inference import run_inference, load_and_process_image
-from src.config import QUESTION, OUTPUT_MODEL_ID
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Run inference on meter images")
-    parser.add_argument("--image_path", type=str, required=True, help="Path to the image file")
-    parser.add_argument("--model_id", type=str, default=OUTPUT_MODEL_ID, 
-                        help="Model ID on HuggingFace Hub or local path")
-    parser.add_argument("--question", type=str, default=QUESTION, 
-                        help="Question to ask about the image")
-    return parser.parse_args()
-
-def main():
-    args = parse_args()
+def run_inference(image_path):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # Load model and processor
-    model, processor, device = load_florence_model_and_processor()
+    checkpoint_path = "ahmed-salim/meter-vision"
+    config = AutoConfig.from_pretrained(checkpoint_path, trust_remote_code=True)
+    config.vision_config.model_type = "davit"
+    model = AutoModelForCausalLM.from_pretrained(checkpoint_path, config=config, trust_remote_code=True).to(device)
+    processor = AutoProcessor.from_pretrained(checkpoint_path, trust_remote_code=True)
     
-    # Load and process image
-    image = load_and_process_image(args.image_path)
+    torch.cuda.empty_cache()
     
-    # Run inference
-    answer = run_inference(model, processor, args.question, image, device)
+    image = Image.open(image_path)
+    if image.mode != "RGB":
+        image = image.convert("RGB")
     
-    # Display results
-    print(f"Question: {args.question}")
-    print(f"Answer: {answer}")
+    prompt = "DocVQA" + "What is the meter values?"
     
-    # Optional: Display the image
-    try:
-        image.show()
-    except Exception as e:
-        print(f"Could not display image: {e}")
+    inputs = processor(text=prompt, images=image, return_tensors="pt").to(device)
+    generated_ids = model.generate(
+        input_ids=inputs["input_ids"],
+        pixel_values=inputs["pixel_values"],
+        max_new_tokens=1024,
+        num_beams=3
+    )
+    generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+    parsed_answer = processor.post_process_generation(generated_text, task="DocVQA", image_size=(image.width, image.height))
+    meter_value = list(parsed_answer.values())[0]
+    
+    return image, meter_value
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Usage: python infer.py <image_path>")
+        sys.exit(1)
+    
+    image_path = sys.argv[1]
+    image, meter_value = run_inference(image_path)
+    
+    plt.figure(figsize=(10, 8))
+    plt.imshow(image)
+    plt.axis('off')
+    plt.title(f"Model Response: {meter_value}", fontsize=16)
+    plt.show()
+    
+    print(f"Meter reading: {meter_value}")

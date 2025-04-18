@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Script to train the Florence model on meter reading.
-"""
-
 import argparse
 import torch
 
@@ -23,20 +18,14 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # Clear CUDA cache
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     
-    # Load model and processor
-    model, processor, device = load_florence_model_and_processor()
-    
-    # Freeze vision tower parameters to save memory
+    model, processor, device = load_florence_model_and_processor()    
     model = freeze_vision_tower(model)
     
-    # Load dataset
     train_data, test_data = load_meter_dataset()
     
-    # Create data loaders
     train_loader, val_loader = create_data_loaders(
         train_data, 
         test_data, 
@@ -46,7 +35,6 @@ def main():
         num_workers=args.num_workers
     )
     
-    # Train model
     model, processor = train_model(
         train_loader, 
         val_loader, 
@@ -57,7 +45,6 @@ def main():
         lr=args.learning_rate
     )
     
-    # Push model to Hub if requested
     if args.push_to_hub:
         push_model_to_hub(model, processor)
 

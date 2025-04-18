@@ -8,24 +8,18 @@ from tqdm import tqdm
 from torch.optim import AdamW
 from transformers import get_scheduler
 from huggingface_hub import login
-from ..config import MODEL_CHECKPOINTS_DIR, OUTPUT_MODEL_ID
+from ..config import MODEL_CHECKPOINTS_DIR, OUTPUT_MODEL_ID, RESULTS_DIR
 from ..utils.visualization import plot_training_metrics
 
 import warnings
+
 warnings.filterwarnings("ignore", category=FutureWarning, module="timm.models.layers")
 
-def train_model(
-    train_loader, 
-    val_loader, 
-    model, 
-    processor, 
-    device,
-    epochs=10, 
-    lr=1e-6
-):
+
+def train_model(train_loader, val_loader, model, processor, device, epochs=10, lr=1e-6):
     """
     Train the Florence model on data.
-    
+
     Args:
         train_loader: DataLoader for training data
         val_loader: DataLoader for validation data
@@ -34,7 +28,7 @@ def train_model(
         device: Device to train on (CPU/GPU)
         epochs: Number of training epochs
         lr: Learning rate
-    
+
     Returns:
         model: The trained model
     """
@@ -49,33 +43,34 @@ def train_model(
 
     train_losses = []
     val_losses = []
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
 
-    # Ensure checkpoint directory exists
     os.makedirs(MODEL_CHECKPOINTS_DIR, exist_ok=True)
 
     for epoch in range(epochs):
         # Training phase
         model.train()
         train_loss = 0
-        
+
         for batch in tqdm(train_loader, desc=f"Training Epoch {epoch + 1}/{epochs}"):
             inputs, answers = batch
 
             # Get input tensors
             input_ids = inputs["input_ids"]
             pixel_values = inputs["pixel_values"]
-            
+
             # Tokenize the ground truth answers
             labels = processor.tokenizer(
-                text=answers, 
-                return_tensors="pt", 
-                padding=True, 
-                return_token_type_ids=False
+                text=answers,
+                return_tensors="pt",
+                padding=True,
+                return_token_type_ids=False,
             ).input_ids.to(device)
 
             # Forward pass
-            outputs = model(input_ids=input_ids, pixel_values=pixel_values, labels=labels)
+            outputs = model(
+                input_ids=input_ids, pixel_values=pixel_values, labels=labels
+            )
             loss = outputs.loss
 
             # Backward pass and optimization
@@ -93,21 +88,25 @@ def train_model(
         # Validation phase
         model.eval()
         val_loss = 0
-        
+
         with torch.no_grad():
-            for batch in tqdm(val_loader, desc=f"Validation Epoch {epoch + 1}/{epochs}"):
+            for batch in tqdm(
+                val_loader, desc=f"Validation Epoch {epoch + 1}/{epochs}"
+            ):
                 inputs, answers = batch
 
                 input_ids = inputs["input_ids"]
                 pixel_values = inputs["pixel_values"]
                 labels = processor.tokenizer(
-                    text=answers, 
-                    return_tensors="pt", 
-                    padding=True, 
-                    return_token_type_ids=False
+                    text=answers,
+                    return_tensors="pt",
+                    padding=True,
+                    return_token_type_ids=False,
                 ).input_ids.to(device)
 
-                outputs = model(input_ids=input_ids, pixel_values=pixel_values, labels=labels)
+                outputs = model(
+                    input_ids=input_ids, pixel_values=pixel_values, labels=labels
+                )
                 loss = outputs.loss
 
                 val_loss += loss.item()
@@ -123,25 +122,17 @@ def train_model(
             os.makedirs(best_model_dir, exist_ok=True)
             model.save_pretrained(best_model_dir)
             processor.save_pretrained(best_model_dir)
-            print(f"Saved best model at epoch {epoch + 1} with validation loss: {avg_val_loss}")
+            print(
+                f"Saved best model at epoch {epoch + 1} with validation loss: {avg_val_loss}"
+            )
 
-    plot_training_metrics(train_losses, val_losses, save_dir=MODEL_CHECKPOINTS_DIR)
+    plot_training_metrics(train_losses, val_losses, save_dir=RESULTS_DIR)
     print("Training completed.")
     return model, processor
 
+
 def push_model_to_hub(model, processor, model_id=OUTPUT_MODEL_ID):
-    """
-    Push the fine-tuned model to the Hugging Face Hub.
-    
-    Args:
-        model: The fine-tuned model
-        processor: The processor
-        model_id: The model ID for HuggingFace Hub
-    """
-    login()  # Ensure user is logged in to Hugging Face
-    
-    # Push model and processor to hub
+    login()
     model.push_to_hub(model_id)
     processor.push_to_hub(model_id)
-    
     print(f"Model pushed to {model_id}")
